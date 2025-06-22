@@ -607,7 +607,7 @@ try {
 
 <header role="banner">
     
-    <div class="logo" aria-label="Cloud Drive" tabindex="0">CloudDrive</div>
+    <div class="logo" aria-label="Cloud5" tabindex="0">Cloud5</div>
     <div class="user-info">Welcome, <?php echo $userName; ?></div>
     <nav role="navigation" aria-label="Primary Navigation">
         <button id="saved-images-btn" title="Saved Images" aria-label="Saved Images"
