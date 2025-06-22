@@ -1,7 +1,7 @@
 # Use PHP 8.2 with Apache
 FROM php:8.2-apache
 
-# Install required packages including PostgreSQL support
+# Install required system packages
 RUN apt-get update && apt-get install -y \
     libpng-dev \
     libjpeg-dev \
@@ -10,20 +10,28 @@ RUN apt-get update && apt-get install -y \
     libonig-dev \
     libzip-dev \
     unzip \
+    git \
+    curl \
     libpq-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
-    && docker-php-ext-install gd mbstring zip pdo pdo_pgsql
+    && docker-php-ext-install gd mbstring zip pdo pdo_mysql pdo_pgsql
 
-# Enable Apache mod_rewrite
+# Enable Apache rewrite module
 RUN a2enmod rewrite
+
+# Install Composer (dependency manager for PHP)
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy project files
+# Copy all application files to container
 COPY . .
 
-# Set permissions
+# Install PHP dependencies (PhpWord, PdfParser, etc.)
+RUN composer install --no-dev --optimize-autoloader
+
+# Set file permissions
 RUN chown -R www-data:www-data /var/www/html
 
 EXPOSE 80
