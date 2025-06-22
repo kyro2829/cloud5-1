@@ -5,7 +5,7 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-require_once 'vendor/autoload.php';
+require_once __DIR__ . '/vendor/autoload.php'; // Ensure this path is correct and vendor folder exists
 
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\IOFactory;
@@ -32,7 +32,7 @@ $viewOnlyExtensions = ['pdf'];
 $editable = in_array($extension, $editableExtensions);
 $viewOnly = in_array($extension, $viewOnlyExtensions);
 
-// Save or export handler
+// Handle Save/Export
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content'])) {
     $updatedContent = $_POST['content'];
 
@@ -40,12 +40,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content'])) {
         return preg_replace('/[^\x09\x0A\x0D\x20-\xD7FF\xE000-\xFFFD]/u', '', $string);
     }
 
+    // Save back to file
     if (in_array($extension, ['html', 'htm', 'txt'])) {
         file_put_contents($filePath, $updatedContent);
     }
 
-    file_put_contents($filePath . '.html', $updatedContent);
+    file_put_contents($filePath . '.html', $updatedContent); // save HTML backup
 
+    // Export to DOCX
     if (isset($_POST['export_docx'])) {
         if (!class_exists('ZipArchive')) {
             die('Error: PHP Zip extension not enabled.');
@@ -64,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content'])) {
         exit();
     }
 
+    // Refresh page after saving
     header("Location: doc_editor.php?file=" . urlencode($fileName));
     exit();
 }
@@ -88,6 +91,7 @@ if ($editable) {
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
