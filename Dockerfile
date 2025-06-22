@@ -37,5 +37,10 @@ RUN chown -R www-data:www-data /var/www/html
 # Add this if not already present
 RUN mkdir -p /tmp && chmod 777 /tmp
 
+# Create a directory for PHP sessions
+RUN mkdir -p /var/lib/php/sessions \
+ && chmod -R 777 /var/lib/php/sessions
+
+
 
 EXPOSE 80
