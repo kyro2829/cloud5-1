@@ -237,6 +237,7 @@ try {
 } catch (Exception $e) {
     error_log('Database error: ' . $e->getMessage());
 }
+    ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -949,4 +950,4 @@ function showStatus(message, type = 'info', duration = 5000) {
 
 </body>
 </html>
-?>
+
