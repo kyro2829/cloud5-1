@@ -1,8 +1,9 @@
 <?php
 session_start();
 
-$supabaseUrl = 'https://vilzpnkkugfovvlcjwvr.supabase.co'; // Your Supabase project URL
-$supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpbHpwbmtrdWdmb3Z2bGNqd3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA1Nzc0NzksImV4cCI6MjA2NjE1MzQ3OX0.0eYfbF1jQABBZP7jf8DRvZNDXw1Dt0CtXPhEsPwtMH4'; // Replace with your Supabase anon key
+// Replace with your actual Supabase project URL and anon key
+$supabaseUrl = 'https://vilzpnkkugfovvlcjwvr.supabase.co';
+$supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpbHpwbmtrdWdmb3Z2bGNqd3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA1Nzc0NzksImV4cCI6MjA2NjE1MzQ3OX0.0eYfbF1jQABBZP7jf8DRvZNDXw1Dt0CtXPhEsPwtMH4';
 
 function sanitize($input) {
   return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
@@ -14,44 +15,35 @@ function redirectWithMessage($type, $msg) {
   exit();
 }
 
-function supabaseSelect($table, $filter) {
+function supabaseQuery($method, $table, $data = [], $filter = '') {
   global $supabaseUrl, $supabaseKey;
-  $url = $supabaseUrl . "/rest/v1/$table?$filter";
 
-  $ch = curl_init($url);
-  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-  curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "apikey: $supabaseKey",
-    "Authorization: Bearer $supabaseKey"
-  ]);
-  $res = curl_exec($ch);
-  curl_close($ch);
-  return json_decode($res, true);
-}
-
-function supabaseInsert($table, $data) {
-  global $supabaseUrl, $supabaseKey;
-  $url = $supabaseUrl . "/rest/v1/$table";
-
-  $ch = curl_init($url);
-  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-  curl_setopt($ch, CURLOPT_POST, true);
-  curl_setopt($ch, CURLOPT_HTTPHEADER, [
+  $url = "$supabaseUrl/rest/v1/$table" . ($filter ? "?$filter" : '');
+  $headers = [
     "apikey: $supabaseKey",
     "Authorization: Bearer $supabaseKey",
-    "Content-Type: application/json",
-    "Prefer: return=representation"
-  ]);
-  curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    "Content-Type: application/json"
+  ];
+
+  if ($method === 'POST') {
+    $headers[] = 'Prefer: return=representation';
+  }
+
+  $ch = curl_init($url);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+  curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+  if ($method === 'POST' && !empty($data)) {
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+  }
   $res = curl_exec($ch);
   curl_close($ch);
+
   return json_decode($res, true);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  // Determine action by which form fields are sent
   if (isset($_POST['register-name'], $_POST['register-email'], $_POST['register-password'], $_POST['register-password-confirm'])) {
-    // Registration flow
     $username = sanitize($_POST['register-name']);
     $email = sanitize($_POST['register-email']);
     $password = $_POST['register-password'];
@@ -70,30 +62,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirectWithMessage('error', 'Password must be at least 6 characters.');
     }
 
-    // Check if user already exists by username or email
-    $existing = supabaseSelect("users", "or=(username.eq.$username,email.eq.$email)");
+    $existing = supabaseQuery('GET', 'users', [], "or=(username.eq.$username,email.eq.$email)");
     if (!empty($existing)) {
       redirectWithMessage('error', 'Username or Email already exists.');
     }
 
-    // Insert new user
     $hash = password_hash($password, PASSWORD_DEFAULT);
-    $inserted = supabaseInsert("users", [
-      "username" => $username,
-      "email" => $email,
-      "password_hash" => $hash
+    $inserted = supabaseQuery('POST', 'users', [
+      'username' => $username,
+      'email' => $email,
+      'password_hash' => $hash
     ]);
 
     if (isset($inserted[0]['id'])) {
+      $_SESSION['user_id'] = $inserted[0]['id'];
       $_SESSION['user_name'] = $username;
       header('Location: drive.php');
       exit();
     } else {
       redirectWithMessage('error', 'Registration failed, try again.');
     }
-
-  } elseif (isset($_POST['login-email'], $_POST['login-password'])) {
-    // Login flow
+  }
+  elseif (isset($_POST['login-email'], $_POST['login-password'])) {
     $email = sanitize($_POST['login-email']);
     $password = $_POST['login-password'];
 
@@ -101,8 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirectWithMessage('error', 'Please fill out all login fields.');
     }
 
-    // Get user by email
-    $user = supabaseSelect("users", "email=eq.$email");
+    $user = supabaseQuery('GET', 'users', [], "email=eq.$email");
     if (!empty($user) && password_verify($password, $user[0]['password_hash'])) {
       $_SESSION['user_id'] = $user[0]['id'];
       $_SESSION['user_name'] = $user[0]['username'];
@@ -111,8 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
       redirectWithMessage('error', 'Invalid email or password.');
     }
-
-  } else {
+  }
+  else {
     http_response_code(400);
     echo 'Bad request.';
   }
@@ -121,6 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   echo 'Method not allowed.';
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
