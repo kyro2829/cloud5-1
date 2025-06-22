@@ -1,11 +1,14 @@
 <?php
 session_start();
+
+// Redirect if not logged in
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.php');
     exit();
 }
 
-require_once __DIR__ . '/vendor/autoload.php'; // Ensure this path is correct and vendor folder exists
+// Autoload dependencies (make sure vendor directory exists)
+require_once __DIR__ . '/vendor/autoload.php';
 
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\IOFactory;
@@ -17,6 +20,7 @@ $userId = $_SESSION['user_id'];
 $baseStorageDir = './uploads/';
 $uploadDir = $baseStorageDir . $userId . '/documents/';
 
+// Validate and locate the file
 $fileName = isset($_GET['file']) ? basename(urldecode($_GET['file'])) : null;
 $filePath = $uploadDir . $fileName;
 
@@ -25,6 +29,7 @@ if (!$fileName || !file_exists($filePath)) {
     exit();
 }
 
+// Determine file type
 $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
 $editableExtensions = ['html', 'htm', 'txt', 'docx'];
 $viewOnlyExtensions = ['pdf'];
@@ -32,20 +37,22 @@ $viewOnlyExtensions = ['pdf'];
 $editable = in_array($extension, $editableExtensions);
 $viewOnly = in_array($extension, $viewOnlyExtensions);
 
-// Handle Save/Export
+// Handle saving or exporting
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content'])) {
     $updatedContent = $_POST['content'];
 
+    // Sanitize content for XML compatibility (for DOCX export)
     function sanitizeForXml($string) {
         return preg_replace('/[^\x09\x0A\x0D\x20-\xD7FF\xE000-\xFFFD]/u', '', $string);
     }
 
-    // Save back to file
+    // Save content to file
     if (in_array($extension, ['html', 'htm', 'txt'])) {
         file_put_contents($filePath, $updatedContent);
     }
 
-    file_put_contents($filePath . '.html', $updatedContent); // save HTML backup
+    // Save a backup as .html
+    file_put_contents($filePath . '.html', $updatedContent);
 
     // Export to DOCX
     if (isset($_POST['export_docx'])) {
@@ -66,12 +73,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content'])) {
         exit();
     }
 
-    // Refresh page after saving
+    // Refresh to show updated content
     header("Location: doc_editor.php?file=" . urlencode($fileName));
     exit();
 }
 
-// Load document content
+// Load file content
 $fileContent = '';
 if ($editable) {
     if ($extension === 'docx') {
@@ -83,14 +90,13 @@ if ($editable) {
     } else {
         $fileContent = file_get_contents($filePath);
     }
-} elseif ($viewOnly) {
-    if ($extension === 'pdf') {
-        $parser = new Parser();
-        $pdf = $parser->parseFile($filePath);
-        $fileContent = nl2br(htmlspecialchars($pdf->getText()));
-    }
+} elseif ($viewOnly && $extension === 'pdf') {
+    $parser = new Parser();
+    $pdf = $parser->parseFile($filePath);
+    $fileContent = nl2br(htmlspecialchars($pdf->getText()));
 }
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
