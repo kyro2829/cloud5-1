@@ -106,10 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     http_response_code(400);
     echo 'Bad request.';
   }
-} else {
-  http_response_code(405);
-  echo 'Method not allowed.';
-}
+
 ?>
 
 <!DOCTYPE html>
