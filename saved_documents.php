@@ -12,7 +12,7 @@ $host = 'aws-0-ap-southeast-1.pooler.supabase.com';  // IPv4 pooler host
 $port = '5432';
 $db   = 'postgres';
 $user = 'postgres.vilzpnkkugfovvlcjwvr';             // Supabase pooler-compatible user
-$pass = 'YOUR_SUPABASE_DB_PASSWORD';                 // Your actual Supabase DB password
+$pass = 'Kyro@supabase!';                 // Your actual Supabase DB password
 
 $dsn = "pgsql:host=$host;port=$port;dbname=$db";
 
