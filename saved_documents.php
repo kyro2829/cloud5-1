@@ -1,5 +1,4 @@
 <?php
-ini_set('session.save_path', '/tmp');
 session_start();
 
 // Redirect if user is not logged in
