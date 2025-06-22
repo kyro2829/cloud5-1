@@ -1,31 +1,36 @@
 <?php
 session_start();
+
 if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
+    header("Location: index.php");
     exit();
 }
 
-$pdo = new PDO("mysql:host=localhost;dbname=user_auth", "root", "");
-$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+try {
+    // Create PDO connection once
+    $pdo = new PDO("mysql:host=localhost;dbname=user_auth", "root", "");
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (PDOException $e) {
+    die("Database connection failed: " . $e->getMessage());
+}
 
 $userId = $_SESSION['user_id'];
 $userName = $_SESSION['user_name'] ?? 'User';
 
 // Handle rename operation
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['original_file_name']) && isset($_POST['new_document_name'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['original_file_name'], $_POST['new_document_name'])) {
     $originalName = $_POST['original_file_name'];
     $newName = $_POST['new_document_name'] . '.' . pathinfo($originalName, PATHINFO_EXTENSION);
-    
+
     $stmt = $pdo->prepare("UPDATE uploaded_documents SET file_name = ? WHERE file_name = ? AND user_id = ?");
     $stmt->execute([$newName, $originalName, $userId]);
-    
+
+    // Redirect to avoid resubmission
     header("Location: " . $_SERVER['PHP_SELF']);
     exit();
 }
 
-$pdo = new PDO("mysql:host=localhost;dbname=user_auth", "root", "");
-$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
+// Handle search
 $searchTerm = $_GET['search'] ?? '';
 $query = "SELECT * FROM uploaded_documents WHERE user_id = ?";
 $params = [$userId];
@@ -38,7 +43,7 @@ if (!empty($searchTerm)) {
 $stmt = $pdo->prepare($query);
 $stmt->execute($params);
 $documents = $stmt->fetchAll(PDO::FETCH_ASSOC);
-?>
+
 
 <!DOCTYPE html>
 <html lang="en">

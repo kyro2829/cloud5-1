@@ -1,79 +1,126 @@
 <?php
-// Ensure no output or whitespace before this tag!
-$host = 'localhost';
-$dbUser = 'root';
-$dbPass = '';
-$dbName = 'user_auth';
-
-// Create PDO connection
-try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbName;charset=utf8mb4", $dbUser, $dbPass);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch (PDOException $e) {
-    $pdo = null;
-    $error = "Database connection failed: " . $e->getMessage();
-}
 session_start();
-ob_start(); // Start output buffering to prevent premature output
-$error = '';
-$success = '';
-$success = '';
-// Handle login
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login-email'], $_POST['login-password'])) {
-    $email = $_POST['login-email'];
+
+$supabaseUrl = 'https://vilzpnkkugfovvlcjwvr.supabase.co'; // Your Supabase project URL
+$supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpbHpwbmtrdWdmb3Z2bGNqd3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA1Nzc0NzksImV4cCI6MjA2NjE1MzQ3OX0.0eYfbF1jQABBZP7jf8DRvZNDXw1Dt0CtXPhEsPwtMH4'; // Replace with your Supabase anon key
+
+function sanitize($input) {
+  return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
+}
+
+function redirectWithMessage($type, $msg) {
+  $_SESSION['flash'] = ['type' => $type, 'msg' => $msg];
+  header('Location: index.php');
+  exit();
+}
+
+function supabaseSelect($table, $filter) {
+  global $supabaseUrl, $supabaseKey;
+  $url = $supabaseUrl . "/rest/v1/$table?$filter";
+
+  $ch = curl_init($url);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "apikey: $supabaseKey",
+    "Authorization: Bearer $supabaseKey"
+  ]);
+  $res = curl_exec($ch);
+  curl_close($ch);
+  return json_decode($res, true);
+}
+
+function supabaseInsert($table, $data) {
+  global $supabaseUrl, $supabaseKey;
+  $url = $supabaseUrl . "/rest/v1/$table";
+
+  $ch = curl_init($url);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_POST, true);
+  curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "apikey: $supabaseKey",
+    "Authorization: Bearer $supabaseKey",
+    "Content-Type: application/json",
+    "Prefer: return=representation"
+  ]);
+  curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+  $res = curl_exec($ch);
+  curl_close($ch);
+  return json_decode($res, true);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  // Determine action by which form fields are sent
+  if (isset($_POST['register-name'], $_POST['register-email'], $_POST['register-password'], $_POST['register-password-confirm'])) {
+    // Registration flow
+    $username = sanitize($_POST['register-name']);
+    $email = sanitize($_POST['register-email']);
+    $password = $_POST['register-password'];
+    $confirm = $_POST['register-password-confirm'];
+
+    if (!$username || !$email || !$password || !$confirm) {
+      redirectWithMessage('error', 'Please fill out all registration fields.');
+    }
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+      redirectWithMessage('error', 'Invalid email address.');
+    }
+    if ($password !== $confirm) {
+      redirectWithMessage('error', 'Passwords do not match.');
+    }
+    if (strlen($password) < 6) {
+      redirectWithMessage('error', 'Password must be at least 6 characters.');
+    }
+
+    // Check if user already exists by username or email
+    $existing = supabaseSelect("users", "or=(username.eq.$username,email.eq.$email)");
+    if (!empty($existing)) {
+      redirectWithMessage('error', 'Username or Email already exists.');
+    }
+
+    // Insert new user
+    $hash = password_hash($password, PASSWORD_DEFAULT);
+    $inserted = supabaseInsert("users", [
+      "username" => $username,
+      "email" => $email,
+      "password_hash" => $hash
+    ]);
+
+    if (isset($inserted[0]['id'])) {
+      $_SESSION['user_name'] = $username;
+      header('Location: drive.php');
+      exit();
+    } else {
+      redirectWithMessage('error', 'Registration failed, try again.');
+    }
+
+  } elseif (isset($_POST['login-email'], $_POST['login-password'])) {
+    // Login flow
+    $email = sanitize($_POST['login-email']);
     $password = $_POST['login-password'];
 
-    if ($pdo) {
-        $stmt = $pdo->prepare("SELECT id, username, password_hash FROM users WHERE email = :email");
-        $stmt->bindParam(':email', $email, PDO::PARAM_STR);
-        try {
-            $stmt->execute();
-            $userData = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($userData && isset($userData['password_hash']) && password_verify($password, $userData['password_hash'])) {
-                // Set session variables to indicate user is logged in
-                $_SESSION['user_id'] = $userData['id'];
-                $_SESSION['username'] = $userData['username'];
-                ob_end_flush(); // Flush output buffer before redirect
-                header('Location: drive.php');
-                exit();
-            } else {
-                $error = 'Invalid email or password.';
-            }
-        } catch (PDOException $e) {
-            $error = "Error during login: " . $e->getMessage();
-        }
+    if (!$email || !$password) {
+      redirectWithMessage('error', 'Please fill out all login fields.');
     }
-}
 
-// Handle registration
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register-name'], $_POST['register-email'], $_POST['register-password'], $_POST['register-password-confirm'])) {
-    $name = $_POST['register-name'];
-    $email = $_POST['register-email'];
-    $password = $_POST['register-password'];
-    $passwordConfirm = $_POST['register-password-confirm'];
-
-    if ($password !== $passwordConfirm) {
-        $error = "Passwords do not match.";
-    } else if (!$pdo) {
-        $error = "Cannot process registration: Database connection failed.";
+    // Get user by email
+    $user = supabaseSelect("users", "email=eq.$email");
+    if (!empty($user) && password_verify($password, $user[0]['password_hash'])) {
+      $_SESSION['user_id'] = $user[0]['id'];
+      $_SESSION['user_name'] = $user[0]['username'];
+      header('Location: drive.php');
+      exit();
     } else {
-        $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-
-        $stmt = $pdo->prepare("INSERT INTO users (username, email, password_hash) VALUES (:name, :email, :password)");
-        $stmt->bindParam(':name', $name, PDO::PARAM_STR);
-        $stmt->bindParam(':email', $email, PDO::PARAM_STR);
-        $stmt->bindParam(':password', $hashedPassword, PDO::PARAM_STR);
-
-        try {
-            $stmt->execute();
-            $success = "Registration successful. Please log in.";
-        } catch (PDOException $e) {
-            $error = "Registration failed: " . $e->getMessage();
-        }
+      redirectWithMessage('error', 'Invalid email or password.');
     }
+
+  } else {
+    http_response_code(400);
+    echo 'Bad request.';
+  }
+} else {
+  http_response_code(405);
+  echo 'Method not allowed.';
 }
- ?>
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
