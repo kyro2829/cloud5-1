@@ -7,7 +7,6 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-echo "SESSION OK. User ID: " . $_SESSION['user_id'];
 
 
 // Autoload dependencies (make sure vendor directory exists)
