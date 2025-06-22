@@ -2,11 +2,13 @@
 ini_set('session.save_path', '/tmp');
 session_start();
 
-// Redirect if not logged in
 if (!isset($_SESSION['user_id'])) {
-    header('Location: index.php');
+    echo "SESSION LOST. Can't find user_id.";
     exit();
 }
+
+echo "SESSION OK. User ID: " . $_SESSION['user_id'];
+
 
 // Autoload dependencies (make sure vendor directory exists)
 require_once __DIR__ . '/vendor/autoload.php';
