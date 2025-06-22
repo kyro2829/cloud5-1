@@ -2,7 +2,8 @@
 session_start();
 
 $supabaseUrl = 'https://vilzpnkkugfovvlcjwvr.supabase.co';
-$supabaseKey = 'YOUR_SUPABASE_ANON_KEY'; // Replace with your real anon key
+$supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpbHpwbmtrdWdmb3Z2bGNqd3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA1Nzc0NzksImV4cCI6MjA2NjE1MzQ3OX0.0eYfbF1jQABBZP7jf8DRvZNDXw1Dt0CtXPhEsPwtMH4
+'; // Replace with your real anon key
 
 function sanitize($input) {
   return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
