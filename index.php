@@ -1,4 +1,5 @@
 <?php
+ini_set('session.save_path', '/tmp');
 session_start();
 
 // Replace with your actual Supabase project URL and anon key
