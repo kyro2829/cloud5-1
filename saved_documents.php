@@ -28,6 +28,19 @@ try {
 $userId = $_SESSION['user_id'];
 $userName = $_SESSION['user_name'] ?? 'User';
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_document'])) {
+    $docId = (int) $_POST['delete_document'];
+
+    $stmt = $pdo->prepare("DELETE FROM uploaded_documents WHERE id = ? AND user_id = ?");
+    $stmt->execute([$docId, $userId]);
+
+    // Optionally, delete the actual file from storage here too.
+
+    // Redirect to avoid form resubmission
+    header("Location: " . $_SERVER['PHP_SELF']);
+    exit();
+}
+
 // Rename document
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['original_file_name'], $_POST['new_document_name'])) {
     $originalName = $_POST['original_file_name'];
