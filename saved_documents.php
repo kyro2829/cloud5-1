@@ -1,49 +1,61 @@
 <?php
 session_start();
 
+// Redirect if user is not logged in
 if (!isset($_SESSION['user_id'])) {
     header("Location: index.php");
     exit();
 }
 
+// === Supabase PostgreSQL Connection ===
+$host = 'aws-0-ap-southeast-1.pooler.supabase.com';  // IPv4 pooler host
+$port = '5432';
+$db   = 'postgres';
+$user = 'postgres.vilzpnkkugfovvlcjwvr';             // Supabase pooler-compatible user
+$pass = 'YOUR_SUPABASE_DB_PASSWORD';                 // Your actual Supabase DB password
+
+$dsn = "pgsql:host=$host;port=$port;dbname=$db";
+
 try {
-    // Create PDO connection once
-    $pdo = new PDO("mysql:host=localhost;dbname=user_auth", "root", "");
+    $pdo = new PDO($dsn, $user, $pass);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
     die("Database connection failed: " . $e->getMessage());
 }
 
+// === Main Logic ===
 $userId = $_SESSION['user_id'];
 $userName = $_SESSION['user_name'] ?? 'User';
 
-// Handle rename operation
+// Rename document
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['original_file_name'], $_POST['new_document_name'])) {
     $originalName = $_POST['original_file_name'];
-    $newName = $_POST['new_document_name'] . '.' . pathinfo($originalName, PATHINFO_EXTENSION);
+    $ext = pathinfo($originalName, PATHINFO_EXTENSION);
+    $safeNewName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $_POST['new_document_name']);
+    $newName = $safeNewName . '.' . $ext;
 
     $stmt = $pdo->prepare("UPDATE uploaded_documents SET file_name = ? WHERE file_name = ? AND user_id = ?");
     $stmt->execute([$newName, $originalName, $userId]);
 
-    // Redirect to avoid resubmission
+    // Redirect after renaming
     header("Location: " . $_SERVER['PHP_SELF']);
     exit();
 }
 
-// Handle search
+// Search documents
 $searchTerm = $_GET['search'] ?? '';
 $query = "SELECT * FROM uploaded_documents WHERE user_id = ?";
 $params = [$userId];
 
 if (!empty($searchTerm)) {
-    $query .= " AND file_name LIKE ?";
-    $params[] = '%' . $searchTerm . '%';
+    $query .= " AND file_name ILIKE ?";
+    $params[] = '%' . $searchTerm . '%'; // Use ILIKE for case-insensitive search in PostgreSQL
 }
 
 $stmt = $pdo->prepare($query);
 $stmt->execute($params);
 $documents = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
+?>
 
 <!DOCTYPE html>
 <html lang="en">
