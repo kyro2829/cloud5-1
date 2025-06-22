@@ -896,7 +896,7 @@ function showStatus(message, type = 'info', duration = 5000) {
     </script>
 
 <section id="documents-section" style="margin-top:3rem;">
-  <h2 style="text-align:center; font-size:2rem; color:var(--primary-500); margin-bottom:1.5rem;">My Documents</h2>
+
   <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1.2rem;">
     <?php
     try {
