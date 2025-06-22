@@ -1,17 +1,8 @@
 <?php
 session_start();
-$host = 'localhost';
-$dbUser = 'root';
-$dbPass = '';
-$dbName = 'user_auth';
 
-// Connect to MySQL
-$mysqli = new mysqli($host, $dbUser, $dbPass, $dbName);
-if ($mysqli->connect_errno) {
-  http_response_code(500);
-  echo 'Database connection error.';
-  exit;
-}
+$supabaseUrl = 'https://vilzpnkkugfovvlcjwvr.supabase.co';
+$supabaseKey = 'YOUR_SUPABASE_ANON_KEY'; // Replace with your real anon key
 
 function sanitize($input) {
   return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
@@ -23,6 +14,40 @@ function redirectWithMessage($type, $msg) {
   exit();
 }
 
+function supabaseSelect($table, $filter) {
+  global $supabaseUrl, $supabaseKey;
+  $url = $supabaseUrl . "/rest/v1/$table?$filter";
+
+  $ch = curl_init($url);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "apikey: $supabaseKey",
+    "Authorization: Bearer $supabaseKey"
+  ]);
+  $res = curl_exec($ch);
+  curl_close($ch);
+  return json_decode($res, true);
+}
+
+function supabaseInsert($table, $data) {
+  global $supabaseUrl, $supabaseKey;
+  $url = $supabaseUrl . "/rest/v1/$table";
+
+  $ch = curl_init($url);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_POST, true);
+  curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "apikey: $supabaseKey",
+    "Authorization: Bearer $supabaseKey",
+    "Content-Type: application/json",
+    "Prefer: return=representation"
+  ]);
+  curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+  $res = curl_exec($ch);
+  curl_close($ch);
+  return json_decode($res, true);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $action = $_POST['action'] ?? '';
 
@@ -30,45 +55,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = sanitize($_POST['username'] ?? '');
     $email = sanitize($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
-    $passwordConfirm = $_POST['confirm_password'] ?? '';
+    $confirm = $_POST['confirm_password'] ?? '';
 
-    if (!$username || !$email || !$password || !$passwordConfirm) {
+    if (!$username || !$email || !$password || !$confirm) {
       redirectWithMessage('error', 'Please fill out all registration fields.');
     }
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
       redirectWithMessage('error', 'Invalid email address.');
     }
-    if ($password !== $passwordConfirm) {
+    if ($password !== $confirm) {
       redirectWithMessage('error', 'Passwords do not match.');
     }
     if (strlen($password) < 6) {
       redirectWithMessage('error', 'Password must be at least 6 characters.');
     }
 
-    // Check if username or email exist
-    $stmt = $mysqli->prepare('SELECT id FROM users WHERE username = ? OR email = ?');
-    $stmt->bind_param('ss', $username, $email);
-    $stmt->execute();
-    $stmt->store_result();
-    if ($stmt->num_rows > 0) {
-      $stmt->close();
+    // Check if user exists
+    $existing = supabaseSelect("users", "or=(username.eq.$username,email.eq.$email)");
+    if (!empty($existing)) {
       redirectWithMessage('error', 'Username or Email already exists.');
     }
-    $stmt->close();
 
-    // Insert new user
+    // Create new user
     $hash = password_hash($password, PASSWORD_DEFAULT);
-    $stmt = $mysqli->prepare('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)');
-    $stmt->bind_param('sss', $username, $email, $hash);
-    if ($stmt->execute()) {
-      $stmt->close();
+    $res = supabaseInsert("users", [
+      "username" => $username,
+      "email" => $email,
+      "password_hash" => $hash
+    ]);
+
+    if (isset($res[0]['id'])) {
       $_SESSION['user_name'] = $username;
       header('Location: drive.php');
       exit();
     } else {
-      $stmt->close();
       redirectWithMessage('error', 'Registration failed, try again.');
     }
+
   } elseif ($action === 'login') {
     $username = sanitize($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -77,19 +100,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       redirectWithMessage('error', 'Please fill out all login fields.');
     }
 
-    $stmt = $mysqli->prepare('SELECT id, password_hash FROM users WHERE username = ?');
-    $stmt->bind_param('s', $username);
-    $stmt->execute();
-    $stmt->bind_result($id, $hash);
-    if ($stmt->fetch()) {
-      if (password_verify($password, $hash)) {
-        $stmt->close();
-        $_SESSION['user_name'] = $username;
-        header('Location: drive.php');
-        exit();
-      }
+    $user = supabaseSelect("users", "username=eq.$username");
+    if (!empty($user) && password_verify($password, $user[0]['password_hash'])) {
+      $_SESSION['user_name'] = $username;
+      header('Location: drive.php');
+      exit();
     }
-    $stmt->close();
+
     redirectWithMessage('error', 'Invalid username or password.');
   } else {
     http_response_code(400);
