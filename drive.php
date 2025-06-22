@@ -2,6 +2,7 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 session_start();
+require_once 'db.php';
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.php');
@@ -22,36 +23,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['original_file_name'],
     $originalFileName = $_POST['original_file_name'];
     $newName = trim($_POST['new_document_name']);
 
-    if ($newName !== '') {
-        try {
-            $pdo = new PDO("mysql:host=localhost;dbname=user_auth", "root", "");
-            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+  if ($newName !== '') {
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM uploaded_documents WHERE file_name = ? AND user_id = ?");
+        $stmt->execute([$originalFileName, $userId]);
+        $doc = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            $stmt = $pdo->prepare("SELECT * FROM uploaded_documents WHERE file_name = ? AND user_id = ?");
-            $stmt->execute([$originalFileName, $userId]);
-            $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($doc) {
+            $oldPath = $doc['file_path'];
+            $ext = pathinfo($oldPath, PATHINFO_EXTENSION);
+            $safeNewName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $newName);
+            $newFileName = $safeNewName . '.' . $ext;
+            $newPath = dirname($oldPath) . '/' . $newFileName;
 
-            if ($doc) {
-                $oldPath = $doc['file_path'];
-                $ext = pathinfo($oldPath, PATHINFO_EXTENSION);
-                $safeNewName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $newName);
-                $newFileName = $safeNewName . '.' . $ext;
-                $newPath = dirname($oldPath) . '/' . $newFileName;
-
-                if (rename($oldPath, $newPath)) {
-                    $update = $pdo->prepare("UPDATE uploaded_documents SET file_name = ?, file_path = ? WHERE file_name = ? AND user_id = ?");
-                    $update->execute([$newFileName, $newPath, $originalFileName, $userId]);
-                }
+            if (rename($oldPath, $newPath)) {
+                $update = $pdo->prepare("UPDATE uploaded_documents SET file_name = ?, file_path = ? WHERE file_name = ? AND user_id = ?");
+                $update->execute([$newFileName, $newPath, $originalFileName, $userId]);
             }
-
-            header("Location: DRIVE.php");
-            exit();
-
-        } catch (Exception $e) {
-            error_log("Rename failed: " . $e->getMessage());
         }
+
+        header("Location: DRIVE.php");
+        exit();
+
+    } catch (Exception $e) {
+        error_log("Rename failed: " . $e->getMessage());
     }
 }
+
 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_document'])) {
