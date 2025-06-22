@@ -105,7 +105,7 @@ if ($editable) {
 <head>
     <meta charset="UTF-8">
     <title>Document Editor | CloudDrive</title>
-    <script src="https://cdn.tiny.cloud/1/hmtiwuvz47az57dzsic5bj6vp7qe17suvu1jddpfsq7qjp6g/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
+    <script src="https://cdn.tiny.cloud/1/no-api-key/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
     <style>
         html, body {
             height: 100%;
