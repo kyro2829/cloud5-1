@@ -1,31 +1,43 @@
 <?php
-
-
 session_start();
+
+// Redirect if user is not logged in
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.php');
     exit();
 }
 
-$userName = isset($_SESSION['user_name']) ? $_SESSION['user_name'] : 'User';
+$userName = $_SESSION['user_name'] ?? 'User';
 $userId = $_SESSION['user_id'];
-$baseStorageDir = './uploads/';
-$uploadDir = $baseStorageDir . $userId . '/';
 
+// Base upload directory
+$baseStorageDir = './uploads/';
+$uploadDir = $baseStorageDir . $userId . '/images/';
+
+// Get and sanitize image name
 $imageName = isset($_GET['image']) ? basename(urldecode($_GET['image'])) : null;
+
 if (!$imageName) {
     header('Location: drive.php');
     exit();
 }
 
-$imagePath = $uploadDir . 'images/' . $imageName;
-if (!file_exists($imagePath)) {
+// Full path to image
+$imagePath = $uploadDir . $imageName;
+
+// Validate image existence
+if (!file_exists($imagePath) || !is_file($imagePath)) {
     header('Location: drive.php');
     exit();
 }
 
-
+// Output headers (if needed) to display the image
+$mimeType = mime_content_type($imagePath);
+header("Content-Type: $mimeType");
+readfile($imagePath);
+exit();
 ?>
+
 
   <!DOCTYPE html>
   <html lang="en">
