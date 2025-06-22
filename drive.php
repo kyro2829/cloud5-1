@@ -2,190 +2,200 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 session_start();
-require_once 'db.php';
+require_once 'db.php';              // <-- $pdo (Supabase Postgres) lives here
 
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.php');
     exit();
 }
 
-$userId = $_SESSION['user_id'];
+$userId   = $_SESSION['user_id'];
 $userName = $_SESSION['user_name'] ?? 'User';
 
+/* ------------------------------------------------------------------
+   1.  Storage paths (local file system)
+-------------------------------------------------------------------*/
 $baseStorageDir = './uploads/';
-$uploadDir = $baseStorageDir . $userId . '/';
-$docDir = $uploadDir . 'documents/';
-$imageDir = $uploadDir . 'images/';
-@mkdir($docDir, 0755, true);
+$uploadDir      = $baseStorageDir . $userId . '/';
+$docDir         = $uploadDir . 'documents/';
+$imageDir       = $uploadDir . 'images/';
+@mkdir($docDir,   0755, true);
 @mkdir($imageDir, 0755, true);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['original_file_name'], $_POST['new_document_name'])) {
-    $originalFileName = $_POST['original_file_name'];
-    $newName = trim($_POST['new_document_name']);
+/* ------------------------------------------------------------------
+   2.  RENAME document
+-------------------------------------------------------------------*/
+if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['original_file_name'], $_POST['new_document_name'])) {
 
-  if ($newName !== '') {
+    $originalFileName = $_POST['original_file_name'];
+    $newName          = trim($_POST['new_document_name']);
+
+    if ($newName !== '') {
+        try {
+            $stmt = $pdo->prepare(
+                'SELECT * FROM uploaded_documents
+                 WHERE file_name = ? AND user_id = ?'
+            );
+            $stmt->execute([$originalFileName, $userId]);
+            $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($doc) {
+                $oldPath      = $doc['file_path'];
+                $ext          = pathinfo($oldPath, PATHINFO_EXTENSION);
+                $safeNewName  = preg_replace('/[^a-zA-Z0-9_-]/', '_', $newName);
+                $newFileName  = $safeNewName . '.' . $ext;
+                $newPath      = dirname($oldPath) . '/' . $newFileName;
+
+                if (rename($oldPath, $newPath)) {
+                    $upd = $pdo->prepare(
+                        'UPDATE uploaded_documents
+                         SET file_name = ?, file_path = ?
+                         WHERE file_name = ? AND user_id = ?'
+                    );
+                    $upd->execute([$newFileName, $newPath, $originalFileName, $userId]);
+                }
+            }
+
+            header('Location: drive.php');
+            exit();
+        } catch (Exception $e) {
+            error_log('Rename failed: ' . $e->getMessage());
+        }
+    }
+}
+
+/* ------------------------------------------------------------------
+   3.  DELETE document
+-------------------------------------------------------------------*/
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_document'])) {
+    $docId = (int) $_POST['delete_document'];
+
     try {
-        $stmt = $pdo->prepare("SELECT * FROM uploaded_documents WHERE file_name = ? AND user_id = ?");
-        $stmt->execute([$originalFileName, $userId]);
+        // Fetch path so we can unlink the file
+        $stmt = $pdo->prepare(
+            'SELECT file_path FROM uploaded_documents WHERE id = ? AND user_id = ?'
+        );
+        $stmt->execute([$docId, $userId]);
         $doc = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($doc) {
-            $oldPath = $doc['file_path'];
-            $ext = pathinfo($oldPath, PATHINFO_EXTENSION);
-            $safeNewName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $newName);
-            $newFileName = $safeNewName . '.' . $ext;
-            $newPath = dirname($oldPath) . '/' . $newFileName;
-
-            if (rename($oldPath, $newPath)) {
-                $update = $pdo->prepare("UPDATE uploaded_documents SET file_name = ?, file_path = ? WHERE file_name = ? AND user_id = ?");
-                $update->execute([$newFileName, $newPath, $originalFileName, $userId]);
-            }
+        if ($doc && file_exists($doc['file_path'])) {
+            unlink($doc['file_path']);
         }
 
-        header("Location: DRIVE.php");
+        // Delete DB row
+        $del = $pdo->prepare(
+            'DELETE FROM uploaded_documents WHERE id = ? AND user_id = ?'
+        );
+        $del->execute([$docId, $userId]);
+
+        header('Location: drive.php');
         exit();
-
     } catch (Exception $e) {
-        error_log("Rename failed: " . $e->getMessage());
+        error_log('Delete failed: ' . $e->getMessage());
     }
 }
 
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_document'])) {
-$docId = (int) $_POST['delete_document'];
-
-try {
-    $pdo = new PDO("mysql:host=localhost;dbname=user_auth", "root", "");
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-    // Fetch file path before deleting from DB
-    $stmt = $pdo->prepare("SELECT file_path FROM uploaded_documents WHERE id = ? AND user_id = ?");
-    $stmt->execute([$docId, $userId]);
-    $doc = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($doc && file_exists($doc['file_path'])) {
-        unlink($doc['file_path']);
-    }
-
-    // Delete from DB
-    $pdo->prepare("DELETE FROM uploaded_documents WHERE id = ? AND user_id = ?")
-        ->execute([$docId, $userId]);
-
-    header("Location: drive.php");
-    exit();
-
-} catch (Exception $e) {
-    error_log("Delete failed: " . $e->getMessage());
-    // optionally flash an error
-}
-}
-
-
-// Function to restructure files array for multiple file uploads
-function restructureFilesArray($files) {
-    $result = [];
+/* ------------------------------------------------------------------
+   4.  Helper: normalise multiple-file array
+-------------------------------------------------------------------*/
+function restructureFilesArray(array $files): array
+{
+    $out = [];
     if (is_array($files['name'])) {
-        foreach ($files['name'] as $index => $name) {
-            $result[] = [
-                'name' => $name,
-                'type' => $files['type'][$index],
-                'tmp_name' => $files['tmp_name'][$index],
-                'error' => $files['error'][$index],
-                'size' => $files['size'][$index]
+        foreach ($files['name'] as $i => $n) {
+            $out[] = [
+                'name'     => $n,
+                'type'     => $files['type'][$i],
+                'tmp_name' => $files['tmp_name'][$i],
+                'error'    => $files['error'][$i],
+                'size'     => $files['size'][$i],
             ];
         }
     } else {
-        $result[] = [
-            'name' => $files['name'],
-            'type' => $files['type'],
-            'tmp_name' => $files['tmp_name'],
-            'error' => $files['error'],
-            'size' => $files['size']
-        ];
+        $out[] = $files;
     }
-    return $result;
+    return $out;
 }
 
-// Handle file upload
+/* ------------------------------------------------------------------
+   5.  UPLOAD handler
+-------------------------------------------------------------------*/
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['uploaded_files'])) {
-    $pdo = new PDO("mysql:host=localhost;dbname=user_auth", "root", "");
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    $allowedExtensions = ['jpg','jpeg','png','gif','webp','bmp','svg','pdf','docx','txt'];
-    $docExtensions = ['pdf','docx','txt'];
-    $imageExtensions = ['jpg','jpeg','png','gif','webp','bmp','svg'];
+    $allowed   = ['jpg','jpeg','png','gif','webp','bmp','svg','pdf','docx','txt'];
+    $docsOnly  = ['pdf','docx','txt'];
+    $imgsOnly  = ['jpg','jpeg','png','gif','webp','bmp','svg'];
 
-    $uploadedFiles = restructureFilesArray($_FILES['uploaded_files']);
-    $response = ['success' => false, 'uploaded' => 0, 'errors' => [], 'message' => ''];
+    $files     = restructureFilesArray($_FILES['uploaded_files']);
+    $response  = ['success' => false, 'uploaded' => 0, 'errors' => []];
 
-    foreach ($uploadedFiles as $file) {
-$name = $file['name'];
-$tmp = $file['tmp_name'];
-$size = $file['size'];
-$error = $file['error'];
+    foreach ($files as $file) {
+        $name = $file['name'];
+        $tmp  = $file['tmp_name'];
+        $size = $file['size'];
+        $err  = $file['error'];
 
-// Check for upload errors before proceeding
-if ($error !== UPLOAD_ERR_OK) {
-    $response['errors'][] = "$name upload error.";
-    continue;
-}
-
-$ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-if (!in_array($ext, $allowedExtensions)) {
-    $response['errors'][] = "$name skipped (unsupported format)";
-    continue;
-}
-
-// MIME type validation
-$finfo = finfo_open(FILEINFO_MIME_TYPE);
-$mimeType = finfo_file($finfo, $tmp);
-finfo_close($finfo);
-
-// Allowed extensions & MIME mapping (safe whitelist)
-$allowedMimeTypes = [
-    'jpg'  => ['image/jpeg'],
-    'jpeg' => ['image/jpeg'],
-    'png'  => ['image/png'],
-    'gif'  => ['image/gif'],
-    'webp' => ['image/webp'],
-    'bmp'  => ['image/bmp'],
-    'svg'  => ['image/svg+xml'],
-    'pdf'  => ['application/pdf'],
-    'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'],
-    'txt'  => ['text/plain', 'application/octet-stream']
-];
-
-// Mime check
-if (!isset($allowedMimeTypes[$ext]) || !in_array($mimeType, $allowedMimeTypes[$ext])) {
-    $response['errors'][] = "$name has invalid mime type ($mimeType)";
-    continue;
-}
-
-        if (in_array($ext, $docExtensions) && $size > 10*1024*1024) {
-            $response['errors'][] = "$name too large (max 10MB)";
-            continue;
-        }
-        if (in_array($ext, $imageExtensions) && $size > 5*1024*1024) {
-            $response['errors'][] = "$name too large (max 5MB)";
+        if ($err !== UPLOAD_ERR_OK) {
+            $response['errors'][] = "$name upload error.";
             continue;
         }
 
-        $safeName = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo($name, PATHINFO_FILENAME));
-        $finalName = $safeName . '_' . time() . '_' . uniqid() . '.' . $ext;
-
-        if (in_array($ext, $docExtensions)) {
-            $targetPath = $docDir . $finalName;
-            $pdo->prepare("INSERT INTO uploaded_documents (user_id, file_name, file_path, file_type, uploaded_at) VALUES (?, ?, ?, ?, NOW())")
-                ->execute([$userId, $finalName, $targetPath, $ext]);
-        } else {
-            $targetPath = $imageDir . $finalName;
-            $pdo->prepare("INSERT INTO uploaded_images (user_id, file_name, file_path, file_type, uploaded_at) VALUES (?, ?, ?, ?, NOW())")
-                ->execute([$userId, $finalName, $targetPath, $ext]);
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        if (!in_array($ext, $allowed, true)) {
+            $response['errors'][] = "$name skipped (unsupported format)";
+            continue;
         }
 
-        if (move_uploaded_file($tmp, $targetPath)) {
-            chmod($targetPath, 0644);
+        /* MIME check */
+        $mime = mime_content_type($tmp);
+        $okMime = [
+            'jpg'  => ['image/jpeg'],
+            'jpeg' => ['image/jpeg'],
+            'png'  => ['image/png'],
+            'gif'  => ['image/gif'],
+            'webp' => ['image/webp'],
+            'bmp'  => ['image/bmp'],
+            'svg'  => ['image/svg+xml'],
+            'pdf'  => ['application/pdf'],
+            'docx' => [
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/msword'
+            ],
+            'txt'  => ['text/plain','application/octet-stream'],
+        ];
+        if (!isset($okMime[$ext]) || !in_array($mime, $okMime[$ext], true)) {
+            $response['errors'][] = "$name invalid mime type ($mime)";
+            continue;
+        }
+
+        /* Size limits */
+        if (in_array($ext, $docsOnly, true)  && $size > 10 * 1024 * 1024) {
+            $response['errors'][] = "$name too large (max 10 MB)";
+            continue;
+        }
+        if (in_array($ext, $imgsOnly, true) && $size > 5  * 1024 * 1024) {
+            $response['errors'][] = "$name too large (max 5 MB)";
+            continue;
+        }
+
+        /* Build safe filename + target path */
+        $safe     = preg_replace('/[^a-zA-Z0-9_-]/', '_', pathinfo($name, PATHINFO_FILENAME));
+        $final    = "{$safe}_" . time() . '_' . uniqid() . ".$ext";
+        $target   = in_array($ext, $docsOnly, true) ? $docDir : $imageDir;
+        $fullPath = $target . $final;
+
+        /* Insert DB record */
+        $table = in_array($ext, $docsOnly, true) ? 'uploaded_documents' : 'uploaded_images';
+        $stmt  = $pdo->prepare(
+            "INSERT INTO {$table} (user_id, file_name, file_path, file_type, uploaded_at)
+             VALUES (?, ?, ?, ?, NOW())"
+        );
+        $stmt->execute([$userId, $final, $fullPath, $ext]);
+
+        /* Move file */
+        if (move_uploaded_file($tmp, $fullPath)) {
+            chmod($fullPath, 0644);
             $response['uploaded']++;
         } else {
             $response['errors'][] = "Failed to save $name.";
@@ -193,39 +203,40 @@ if (!isset($allowedMimeTypes[$ext]) || !in_array($mimeType, $allowedMimeTypes[$e
     }
 
     $response['success'] = $response['uploaded'] > 0;
-    $response['message'] = $response['uploaded'] > 0 ? 'Upload successful.' : 'No files uploaded.';
+    $response['message'] = $response['success'] ? 'Upload successful.' : 'No files uploaded.';
     header('Content-Type: application/json');
     echo json_encode($response);
     exit();
 }
 
-// Get files for display
+/* ------------------------------------------------------------------
+   6.  Build file list for UI (images only here)
+-------------------------------------------------------------------*/
 $files = [];
 try {
-    $pdo = new PDO("mysql:host=localhost;dbname=user_auth", "root", "");
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    
-    // Get images
-    $stmt = $pdo->prepare("SELECT file_name, file_path, file_type, uploaded_at FROM uploaded_images WHERE user_id = ? ORDER BY uploaded_at DESC");
+    $stmt = $pdo->prepare(
+        'SELECT file_name, file_path, file_type, uploaded_at
+         FROM uploaded_images
+         WHERE user_id = ?
+         ORDER BY uploaded_at DESC'
+    );
     $stmt->execute([$userId]);
     $images = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    foreach ($images as $image) {
-        if (file_exists($image['file_path'])) {
+
+    foreach ($images as $img) {
+        if (file_exists($img['file_path'])) {
             $files[] = [
-                'name' => $image['file_name'],
-                'path' => $image['file_path'],
-                'type' => 'image',
-                'size' => filesize($image['file_path']),
-                'modified' => strtotime($image['uploaded_at'])
+                'name'     => $img['file_name'],
+                'path'     => $img['file_path'],
+                'type'     => 'image',
+                'size'     => filesize($img['file_path']),
+                'modified' => strtotime($img['uploaded_at']),
             ];
         }
     }
 } catch (Exception $e) {
-    error_log("Database error: " . $e->getMessage());
+    error_log('Database error: ' . $e->getMessage());
 }
-?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -938,3 +949,4 @@ function showStatus(message, type = 'info', duration = 5000) {
 
 </body>
 </html>
+?>
