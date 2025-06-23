@@ -7,9 +7,6 @@ if (!isset($_SESSION['user_id'])) {
     exit();
 }
 
-
-
-// Autoload dependencies (make sure vendor directory exists)
 require_once __DIR__ . '/vendor/autoload.php';
 
 use PhpOffice\PhpWord\PhpWord;
@@ -22,7 +19,6 @@ $userId = $_SESSION['user_id'];
 $baseStorageDir = './uploads/';
 $uploadDir = $baseStorageDir . $userId . '/documents/';
 
-// Validate and locate the file
 $fileName = isset($_GET['file']) ? basename(urldecode($_GET['file'])) : null;
 $filePath = $uploadDir . $fileName;
 
@@ -31,11 +27,9 @@ if (!$fileName || !file_exists($filePath)) {
     exit();
 }
 
-// Determine file type
 $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
 $editableExtensions = ['html', 'htm', 'txt', 'docx'];
 $viewOnlyExtensions = ['pdf'];
-
 $editable = in_array($extension, $editableExtensions);
 $viewOnly = in_array($extension, $viewOnlyExtensions);
 
@@ -43,20 +37,24 @@ $viewOnly = in_array($extension, $viewOnlyExtensions);
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content'])) {
     $updatedContent = $_POST['content'];
 
-    // Sanitize content for XML compatibility (for DOCX export)
     function sanitizeForXml($string) {
         return preg_replace('/[^\x09\x0A\x0D\x20-\xD7FF\xE000-\xFFFD]/u', '', $string);
     }
 
-    // Save content to file
     if (in_array($extension, ['html', 'htm', 'txt'])) {
         file_put_contents($filePath, $updatedContent);
+    } elseif ($extension === 'docx') {
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        Html::addHtml($section, sanitizeForXml($updatedContent), false, false);
+        $writer = IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($filePath);
     }
 
-    // Save a backup as .html
+    // Optional backup as .html
     file_put_contents($filePath . '.html', $updatedContent);
 
-    // Export to DOCX
+    // Export to Word
     if (isset($_POST['export_docx'])) {
         if (!class_exists('ZipArchive')) {
             die('Error: PHP Zip extension not enabled.');
@@ -75,12 +73,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content'])) {
         exit();
     }
 
-    // Refresh to show updated content
-    header("Location: doc_editor.php?file=" . urlencode($fileName));
+    header("Location: doc_editor.php?file=" . urlencode($fileName) . "&saved=true");
     exit();
 }
 
-// Load file content
+// Load content
 $fileContent = '';
 if ($editable) {
     if ($extension === 'docx') {
@@ -98,7 +95,6 @@ if ($editable) {
     $fileContent = nl2br(htmlspecialchars($pdf->getText()));
 }
 ?>
-
 
 <!DOCTYPE html>
 <html lang="en">
@@ -154,26 +150,39 @@ if ($editable) {
         #editor {
             height: calc(100vh - 80px);
         }
+        .notice {
+            background: #d1e7dd;
+            color: #0f5132;
+            border: 1px solid #badbcc;
+            padding: 1rem;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
 <div class="editor-wrapper">
+    <?php if (isset($_GET['saved']) && $_GET['saved'] === 'true'): ?>
+        <div class="notice">✅ Document saved successfully.</div>
+    <?php endif; ?>
+
     <div class="editor-header">
         <h2><?php echo htmlspecialchars($fileName); ?></h2>
-        <div class="editor-actions">
-            <?php if ($editable): ?>
+
+        <?php if ($editable): ?>
             <form method="post" id="editorForm">
                 <input type="hidden" name="content" id="hiddenContent">
-                <button type="submit" name="save_only" onclick="return submitEditor(false)">💾 Save Document</button>
-                <button type="submit" name="export_docx" onclick="return submitEditor(true)">⬇ Export to Word</button>
-                <button type="button" onclick="window.location.href='drive.php'">⏪ Back to Drive</button>
+                <div class="editor-actions">
+                    <button type="submit" name="save_only" onclick="return submitEditor(false)">💾 Save Document</button>
+                    <button type="submit" name="export_docx" onclick="return submitEditor(true)">⬇ Export to Word</button>
+                    <button type="button" onclick="window.location.href='drive.php'">⏪ Back to Drive</button>
+                </div>
             </form>
-            <?php else: ?>
+        <?php else: ?>
+            <div class="editor-actions">
                 <button type="button" onclick="window.location.href='drive.php'">⏪ Back to Drive</button>
-            <?php endif; ?>
-        </div>
+            </div>
+        <?php endif; ?>
     </div>
-
 
     <?php if ($editable): ?>
         <div class="editor-body">
@@ -192,10 +201,7 @@ if ($editable) {
 
 <?php if ($editable): ?>
 <script>
-    let exportMode = false;
-
     function submitEditor(isExport) {
-        exportMode = isExport;
         const editorContent = tinymce.get("editor").getContent();
         document.getElementById("hiddenContent").value = editorContent;
         return true;
@@ -212,6 +218,5 @@ if ($editable) {
     });
 </script>
 <?php endif; ?>
-
 </body>
 </html>
