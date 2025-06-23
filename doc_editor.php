@@ -33,28 +33,40 @@ $viewOnlyExtensions = ['pdf'];
 $editable = in_array($extension, $editableExtensions);
 $viewOnly = in_array($extension, $viewOnlyExtensions);
 
+// 👉 Fix for invalid HTML (TinyMCE) and Xml parsing issues
+function sanitizeForXml($string) {
+    // Remove non-XML-safe characters
+    $string = preg_replace('/[^\x09\x0A\x0D\x20-\xD7FF\xE000-\xFFFD]/u', '', $string);
+
+    // Self-close tags
+    $string = preg_replace('/<img([^>]*)(?<!\/)>/i', '<img$1 />', $string);
+    $string = preg_replace('/<br([^>]*)>/i', '<br$1 />', $string);
+    $string = preg_replace('/<hr([^>]*)>/i', '<hr$1 />', $string);
+
+    return $string;
+}
+
 // Handle saving or exporting
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content'])) {
     $updatedContent = $_POST['content'];
-
-    function sanitizeForXml($string) {
-        return preg_replace('/[^\x09\x0A\x0D\x20-\xD7FF\xE000-\xFFFD]/u', '', $string);
-    }
 
     if (in_array($extension, ['html', 'htm', 'txt'])) {
         file_put_contents($filePath, $updatedContent);
     } elseif ($extension === 'docx') {
         $phpWord = new PhpWord();
         $section = $phpWord->addSection();
+
+        libxml_use_internal_errors(true); // 🔧 suppress parsing warnings
         Html::addHtml($section, sanitizeForXml($updatedContent), false, false);
+
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $writer->save($filePath);
     }
 
-    // Optional backup as .html
+    // Optional: Backup as HTML
     file_put_contents($filePath . '.html', $updatedContent);
 
-    // Export to Word
+    // Export to Word (.docx download)
     if (isset($_POST['export_docx'])) {
         if (!class_exists('ZipArchive')) {
             die('Error: PHP Zip extension not enabled.');
@@ -62,6 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content'])) {
 
         $phpWord = new PhpWord();
         $section = $phpWord->addSection();
+
+        libxml_use_internal_errors(true); // 🔧 suppress parsing warnings
         Html::addHtml($section, sanitizeForXml($updatedContent), false, false);
 
         header("Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document");
