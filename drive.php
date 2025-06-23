@@ -939,7 +939,13 @@ function showStatus(message, type = 'info', duration = 5000) {
     </form>
   </div>
 </div>
-
+            <?php
+            }
+        }
+    } catch (Exception $e) {
+        echo "<p style='color:red;'>Database error: " . $e->getMessage() . "</p>";
+    }
+    ?>
   </div>
 </section>
 
